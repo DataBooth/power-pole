@@ -45,3 +45,36 @@ Where:
 - $\epsilon$ is the error term.
 
 This model is relatively simple and interpretable, suitable for linear trends in time series data, but may not capture complex non-linear patterns or long-term dependencies.
+
+## Code
+
+The keyfiles are:
+
+- `src/skforecast_eg.py`: The main Python script containing the `TemperatureForecaster` class for time series forecasting.
+- `tests/test_skforecast_eg.py`: The test script containing unit (`pytest`) tests for the `TemperatureForecaster` class.
+- `skforecast_eg.toml`: The configuration file in TOML format for setting parameters.
+
+## Project Structure
+
+The project structure is as follows:
+
+```
+.
+├── README.md
+├── pyproject.toml
+├── pytest.ini
+├── r-project
+│   ├── get_some_other_data.R
+│   ├── get_some_weather_data.R
+│   └── power-pole.Rproj
+├── sample_forecast.png
+├── skforecast_eg.toml
+├── src
+│   └── skforecast_eg.py
+├── temperature_forecast.log
+├── tests
+│   └── test_skforecast_eg.py
+└── uv.lock
+```
+
+Note: the `r-project` directory is a placeholder for any R scripts or projects that might be relevant to the forecasting task. e.g. Getting some weather data where a Python library is not available.
