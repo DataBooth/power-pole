@@ -104,7 +104,7 @@ class TemperatureForecaster:
         """
         mse = mean_squared_error(test_data['temperature'], predictions)
         rmse = np.sqrt(mse)
-        logger.info(f"Model evaluation RMSE: {rmse:.2f}°C")
+        logger.info(f"Model evaluation RMSE: {rmse:.3f}°C")
         return rmse
 
     def plot_results(self, train_data: pd.DataFrame, test_data: pd.DataFrame, predictions: pd.Series):

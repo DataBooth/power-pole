@@ -7,8 +7,8 @@ split_date = "2023-07-01"
 lags = 60
 
 [temperature]
-base_temp = 19.5
-annual_amplitude = 6.5
+base_temp = 21.5
+annual_amplitude = 7.5
 noise_scale = 2
 
 [plot]
