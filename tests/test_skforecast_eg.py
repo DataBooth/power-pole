@@ -42,9 +42,11 @@ def test_split_data(forecaster):
     print(f"Train length: {len(train)}, Test length: {len(test)}")
     print(f"Total days (expected): {total_days}, Actual total: {actual_total}")
 
-    assert actual_total == total_days, f"Expected {total_days} days, but got {actual_total}"
-    assert train.index[-2].strftime('%Y-%m-%d') == "2023-06-30"
-    assert test.index[0].strftime('%Y-%m-%d') == "2023-07-01"
+    assert (
+        actual_total == total_days
+    ), f"Expected {total_days} days, but got {actual_total}"
+    assert train.index[-2].strftime("%Y-%m-%d") == "2023-06-30"
+    assert test.index[0].strftime("%Y-%m-%d") == "2023-07-01"
 
 
 def test_train_model(forecaster):

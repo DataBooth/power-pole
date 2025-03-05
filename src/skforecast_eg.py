@@ -132,7 +132,6 @@ class TemperatureForecaster:
             subplot_titles=["Sydney Daily Temperature Forecast vs Actual (°C)"],
         )
 
-        # Add traces
         fig.add_trace(
             go.Scatter(
                 x=train_data.index,
@@ -158,7 +157,6 @@ class TemperatureForecaster:
             )
         )
 
-        # Update layout
         fig.update_layout(
             height=600,
             width=1000,
@@ -168,7 +166,6 @@ class TemperatureForecaster:
             legend_title="Legend",
         )
 
-        # Show the plot
         fig.show()
         logger.info("Plotted results using Plotly")
 
