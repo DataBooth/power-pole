@@ -15,6 +15,8 @@ Here's a brief overview of what the code does:
 
 The code is structured as an object-oriented Python class, with methods for each step of the process. It uses external configuration from a TOML file for flexibility, incorporates logging for tracking the execution, and employs type hints for better code readability and maintainability. This structure makes it easy to modify parameters, reuse the code for different datasets, and potentially extend the functionality for more complex forecasting tasks. e.g. choice of different models, hyperparameter tuning, etc.
 
+Synthetic data is used here for demonstration purposes, but the same code can be adapted to work with real-world temperature data or other time series data with minimal changes either by calling an API, querying a database or reading from a file.
+
 ## Sample Output
 
 ![Sample temperature forecast](sample_forecast.png)
