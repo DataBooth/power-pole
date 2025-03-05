@@ -56,6 +56,8 @@ The keyfiles are:
 - `tests/test_skforecast_eg.py`: The test script containing unit (`pytest`) tests for the `TemperatureForecaster` class.
 - `skforecast_eg.toml`: The configuration file in TOML format for setting parameters.
 
+The project is managed using [`uv`](https://docs.astral.sh/uv/). The [`pyproject.toml`](pyproject.toml) file contains the project metadata and dependencies.
+
 ## Project Structure
 
 The project structure is as follows:
