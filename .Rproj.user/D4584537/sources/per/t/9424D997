@@ -1,0 +1,26 @@
+{
+    "id": "9424D997",
+    "path": "~/code/github/databooth/power-pole/get_some_weather_data.R",
+    "project_path": "get_some_weather_data.R",
+    "type": "r_source",
+    "hash": "2917143578",
+    "contents": "",
+    "dirty": false,
+    "created": 1741143840083.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "13,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1741144311,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1741144311036,
+    "read_only": false,
+    "read_only_alternatives": []
+}

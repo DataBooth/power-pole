@@ -1,0 +1,15 @@
+[data]
+start_date = "2020-01-01"
+end_date = "2024-12-31"
+split_date = "2023-07-01"
+
+[model]
+lags = 60
+
+[temperature]
+base_temp = 19.5
+annual_amplitude = 6.5
+noise_scale = 2
+
+[plot]
+figsize = [12, 6]

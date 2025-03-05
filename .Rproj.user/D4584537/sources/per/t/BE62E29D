@@ -1,0 +1,26 @@
+{
+    "id": "BE62E29D",
+    "path": "~/code/github/databooth/power-pole/get_some_other_data.R",
+    "project_path": "get_some_other_data.R",
+    "type": "r_source",
+    "hash": "2080990824",
+    "contents": "",
+    "dirty": false,
+    "created": 1741144483593.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "5,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1741144582,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1741144582907,
+    "read_only": false,
+    "read_only_alternatives": []
+}
