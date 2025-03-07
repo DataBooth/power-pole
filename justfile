@@ -1,16 +1,20 @@
+# List all available recipes
 default:
+    @just --list
 
-API_KEY := env_var("API_KEY")
 API_URL := "http://localhost:8000"
+
+# Read API_KEY from .env file
+API_KEY := `grep '^API_KEY=' .env | cut -d'=' -f2 | tr -d '"'`
 
 healthcheck:
     @echo "Checking API health..."
-    @curl $(API_URL)/healthcheck
+    @curl -s {{API_URL}}/healthcheck | jq
 
 train:
     @echo "Training the model..."
-    @curl -X POST $(API_URL)/train \
-        -H "X-API-Key: $(API_KEY)"
+    @curl -s -X POST {{API_URL}}/train \
+        -H "X-API-Key: {{API_KEY}}" | jq
 
 predict steps:
     @if [ -z "{{steps}}" ]; then \
@@ -18,7 +22,7 @@ predict steps:
         exit 1; \
     fi
     @echo "Making predictions for {{steps}} steps..."
-    @curl -X POST $(API_URL)/predict \
+    @curl -s -X POST {{API_URL}}/predict \
         -H "Content-Type: application/json" \
-        -H "X-API-Key: $(API_KEY)" \
-        -d "{\"steps\": {{steps}}}"
+        -H "X-API-Key: {{API_KEY}}" \
+        -d "{\"steps\": {{steps}}}" | jq

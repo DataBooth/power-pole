@@ -91,7 +91,8 @@ async def train_model(api_key: str = Depends(get_api_key)):
     Endpoint to train the model. Requires a valid API key.
     """
     try:
-        forecaster.train_model()
+        train_data, _ = forecaster.split_data()
+        forecaster.train_model(train_data=train_data)
         return {"message": "Model trained successfully"}
     except Exception as e:
         logger.error(f"Training failed: {e}")
@@ -99,28 +100,22 @@ async def train_model(api_key: str = Depends(get_api_key)):
 
 
 @app.post("/predict", response_model=PredictionResponse)
-async def make_prediction(
-    request: PredictionRequest, api_key: str = Depends(get_api_key)
-):
+async def make_prediction(request: PredictionRequest, api_key: str = Depends(get_api_key)):
     """
     Endpoint to make predictions and return RMSE. Requires a valid API key.
     """
     try:
-        # Split the data
+        # Split the data to get train and test sets
         train_data, test_data = forecaster.split_data()
 
         # Make predictions
-        predictions = forecaster.make_predictions(steps=len(test_data))
+        predictions = forecaster.make_predictions(steps=request.steps, train_data=train_data)
 
         # Evaluate the model to get RMSE
-        rmse = forecaster.evaluate_model(test_data)
+        rmse = forecaster.evaluate_model(test_data, predictions)
 
         # Convert predictions to a list for JSON serialization
-        predictions_list = (
-            predictions.tolist()
-            if isinstance(predictions, pd.Series)
-            else list(predictions)
-        )
+        predictions_list = predictions.tolist() if isinstance(predictions, pd.Series) else list(predictions)
 
         # Prepare the response
         response_data = {"predictions": predictions_list, "rmse": rmse}
@@ -129,6 +124,7 @@ async def make_prediction(
     except Exception as e:
         logger.error(f"Prediction failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 if __name__ == "__main__":
