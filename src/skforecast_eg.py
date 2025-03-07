@@ -108,8 +108,8 @@ class TemperatureForecaster:
             WHERE date >= '{start_date}' AND date <= '{end_date}'
             ORDER BY date
         """
+        logger.debug(f"Query: {query}")
         return self.connection.execute(query).fetchdf()
-
 
     def split_data(
         self,
@@ -137,6 +137,8 @@ class TemperatureForecaster:
         )
 
         df = self.query_data(start_date, end_date)
+        logger.info(f"Data loaded. Total rows: {len(df)}")
+        logger.debug(f"Data head:\n{df.head()}")
 
         # Ensure the index is in datetime format
         df["date"] = pd.to_datetime(df["date"])
@@ -292,22 +294,21 @@ class TemperatureForecaster:
         logger.info("Plotted results using Plotly")
 
 
-if __name__ == "__main__":
+CONFIG_FILE = Path.cwd() / "skforecast_eg.toml"
 
-    config_file = Path.cwd() / "skforecast_eg.toml"
+if __name__ == "__main__":
+    config_file = CONFIG_FILE
     if not config_file.exists():
         logger.error(f"Config file {config_file} not found. Exiting.")
         exit(1)
 
     forecaster = TemperatureForecaster()
     forecaster._generate_synthetic_data()  # Generate synthetic temperature data (if needed)
+
     train_data, test_data = forecaster.split_data()
     forecaster.train_model(train_data)
 
     predictions = forecaster.make_predictions(steps=len(test_data))
-    logger.info(f"Predictions made: {len(predictions)}")
-
     rmse = forecaster.evaluate_model(test_data)
-    logger.info(f"Final RMSE: {rmse}")
 
     forecaster.plot_results(train_data, test_data, predictions)
