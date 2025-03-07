@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -11,7 +11,6 @@ from loguru import logger
 from plotly.subplots import make_subplots
 from skforecast.ForecasterAutoreg import ForecasterAutoreg
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
 
 
 class TemperatureForecaster:
@@ -104,11 +103,10 @@ class TemperatureForecaster:
         """
         logger.info(f"Querying data from {start_date} to {end_date}")
         query = f"""
-            SELECT * FROM {self.table_name}
+            SELECT date, temperature FROM {self.table_name}
             WHERE date >= '{start_date}' AND date <= '{end_date}'
             ORDER BY date
         """
-        logger.debug(f"Query: {query}")
         return self.connection.execute(query).fetchdf()
 
     def split_data(
@@ -137,8 +135,6 @@ class TemperatureForecaster:
         )
 
         df = self.query_data(start_date, end_date)
-        logger.info(f"Data loaded. Total rows: {len(df)}")
-        logger.debug(f"Data head:\n{df.head()}")
 
         # Ensure the index is in datetime format
         df["date"] = pd.to_datetime(df["date"])
@@ -156,15 +152,13 @@ class TemperatureForecaster:
 
         return train, test
 
-    def train_model(self, train_data: Optional[pd.DataFrame] = None):
+    def train_model(self, train_data: pd.DataFrame):
         """
-        Train the forecasting model using provided or default training data.
+        Train the forecasting model using the provided training data.
 
         Args:
-            train_data (pd.DataFrame, optional): Training data. If None, uses default split.
+            train_data (pd.DataFrame): Training data.
         """
-        if train_data is None:
-            train_data, _ = self.split_data()
 
         logger.info(
             f"Training model with data from {train_data.index[0]} to {train_data.index[-1]}"
@@ -174,21 +168,25 @@ class TemperatureForecaster:
             logger.error("No training data available")
             raise ValueError("No training data available.")
 
+        # Set the frequency of the DatetimeIndex
+        train_data = train_data.asfreq("D")
+
         lags = self.config["model"]["lags"]
         self.forecaster = ForecasterAutoreg(regressor=LinearRegression(), lags=lags)
 
         self.forecaster.fit(y=train_data["temperature"])
         logger.info("Model trained successfully")
 
-    def make_predictions(self, steps: int) -> pd.Series:
+    def make_predictions(self, steps: int, train_data: pd.DataFrame) -> pd.Series:
         """
         Make predictions using the trained model.
 
         Args:
             steps (int): Number of steps ahead to predict.
+            train_data (pd.DataFrame): The training data (used to get last date for prediction range).
 
         Returns:
-            pd.Series: Predicted values.
+            pd.Series: Predicted values with datetime index.
 
         Raises:
             ValueError: If no trained model exists.
@@ -202,14 +200,30 @@ class TemperatureForecaster:
             )
 
         logger.info(f"Making predictions for {steps} steps ahead")
-        return self.forecaster.predict(steps=steps)
 
-    def evaluate_model(self, test_data: Optional[pd.DataFrame] = None) -> float:
+        # Get predictions
+        predictions = self.forecaster.predict(steps=steps)
+
+        # Get the last date from the training data
+        last_date = train_data.index[-1]
+
+        # Generate future dates starting from the day after last training date
+        future_dates = pd.date_range(
+            start=last_date + pd.DateOffset(days=1), periods=steps, freq="D"
+        )
+
+        # Create a Pandas Series with the predictions and the new dates
+        return pd.Series(
+            predictions.values, index=future_dates, name="predicted_temperature"
+        )
+
+    def evaluate_model(self, test_data: pd.DataFrame, predictions: pd.Series) -> float:
         """
-        Evaluate the model using provided or default test data.
+        Evaluate the model using the provided test data and predictions.
 
         Args:
-            test_data (pd.DataFrame, optional): Test data. If None, uses default split.
+            test_data (pd.DataFrame): Test data.
+            predictions (pd.Series): Predicted values.
 
         Returns:
             float: Root Mean Squared Error (RMSE).
@@ -218,9 +232,6 @@ class TemperatureForecaster:
             logger.error("Model is not trained. Train the model before evaluation")
             raise ValueError("Model is not trained. Train the model before evaluation.")
 
-        if test_data is None:
-            _, test_data = self.split_data()
-
         logger.info(
             f"Evaluating model with data from {test_data.index[0]} to {test_data.index[-1]}"
         )
@@ -228,8 +239,6 @@ class TemperatureForecaster:
         if test_data.empty:
             logger.error("No test data available")
             raise ValueError("No test data available.")
-
-        predictions = self.forecaster.predict(steps=len(test_data))
 
         rmse = np.sqrt(
             np.mean((test_data["temperature"].values - predictions.values) ** 2)
@@ -274,7 +283,7 @@ class TemperatureForecaster:
         )
         fig.add_trace(
             go.Scatter(
-                x=test_data.index,
+                x=predictions.index,
                 y=predictions,
                 name="Predictions",
                 line=dict(color="red", width=5),
@@ -293,22 +302,72 @@ class TemperatureForecaster:
         fig.show()
         logger.info("Plotted results using Plotly")
 
+    def plot_rmse_by_steps(self, test_data: pd.DataFrame, train_data: pd.DataFrame):
+        """
+        Calculate RMSE for different prediction steps and plot the results.
+
+        Args:
+            test_data (pd.DataFrame): Test data.
+            train_data (pd.DataFrame): Training data.
+        """
+        # Store RMSE values for different steps
+        rmse_values = []
+        steps_range = range(1, len(test_data) + 1)
+
+        # Calculate RMSE for each number of steps
+        for steps in steps_range:
+            predictions = self.make_predictions(steps=steps, train_data=train_data)
+
+            # Align predictions with the test data for evaluation
+            common_dates = test_data.index.intersection(predictions.index)
+            if common_dates.empty:
+                logger.warning(
+                    f"No common dates between predictions and test data for {steps} steps."
+                )
+                rmse_values.append(np.nan)  # or some default value
+                continue
+
+            test_subset = test_data.loc[common_dates]
+            predictions_subset = predictions.loc[common_dates]
+
+            rmse = np.sqrt(
+                np.mean(
+                    (test_subset["temperature"].values - predictions_subset.values) ** 2
+                )
+            )
+            rmse_values.append(rmse)
+
+        # Create a plot
+        fig = go.Figure(
+            data=[go.Scatter(x=list(steps_range), y=rmse_values, mode="lines+markers")]
+        )
+
+        fig.update_layout(
+            title="RMSE vs. Prediction Steps",
+            xaxis_title="Prediction Steps",
+            yaxis_title="RMSE",
+        )
+
+        fig.show()
+        logger.info("Plotted RMSE vs. Prediction Steps")
+
 
 CONFIG_FILE = Path.cwd() / "skforecast_eg.toml"
 
 if __name__ == "__main__":
-    config_file = CONFIG_FILE
-    if not config_file.exists():
-        logger.error(f"Config file {config_file} not found. Exiting.")
+    if not CONFIG_FILE.exists():
+        logger.error(f"Config file {CONFIG_FILE} not found. Exiting.")
         exit(1)
 
     forecaster = TemperatureForecaster()
     forecaster._generate_synthetic_data()  # Generate synthetic temperature data (if needed)
-
     train_data, test_data = forecaster.split_data()
     forecaster.train_model(train_data)
 
-    predictions = forecaster.make_predictions(steps=len(test_data))
-    rmse = forecaster.evaluate_model(test_data)
+    predictions = forecaster.make_predictions(
+        steps=len(test_data), train_data=train_data
+    )
+    rmse = forecaster.evaluate_model(test_data, predictions)
 
     forecaster.plot_results(train_data, test_data, predictions)
+    forecaster.plot_rmse_by_steps(test_data, train_data)

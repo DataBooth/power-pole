@@ -1,15 +1,16 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Security
-from fastapi.security import APIKeyHeader, APIKeyQuery, APIKey
-from pydantic import BaseModel
+import os
+import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
-import secrets
-import pandas as pd
+
 import numpy as np
-from loguru import logger
-import os
+import pandas as pd
 from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi.security import APIKeyHeader
+from loguru import logger
+from pydantic import BaseModel
 
 # Load environment variables from .env file
 load_dotenv()
