@@ -11,5 +11,6 @@ base_temp = 21.5
 annual_amplitude = 7.5
 noise_scale = 2
 
-# [plot]
-# figsize = [12, 6]
+[logging]
+log_file = "temperature_forecast.log"
+rotation = "1 MB"
