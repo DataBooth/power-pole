@@ -1,11 +1,9 @@
 import os
-import secrets
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
-import numpy as np
 import pandas as pd
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
@@ -15,10 +13,8 @@ from pydantic import BaseModel
 # Load environment variables from .env file
 load_dotenv()
 
-# Retrieve the API key from the environment variables
 API_KEY = os.getenv("API_KEY")
 
-# Ensure the API key is set
 if not API_KEY:
     logger.error("API_KEY not found in .env file. Exiting.")
     raise ValueError("API_KEY not found in .env file.")
@@ -32,7 +28,6 @@ except ImportError:
 
 app = FastAPI()
 
-# Instantiate the TemperatureForecaster - Adjust paths if necessary
 try:
     forecaster = TemperatureForecaster(
         config_path=str(Path.cwd() / "skforecast_eg.toml"),
@@ -100,24 +95,28 @@ async def train_model(api_key: str = Depends(get_api_key)):
 
 
 @app.post("/predict", response_model=PredictionResponse)
-async def make_prediction(request: PredictionRequest, api_key: str = Depends(get_api_key)):
+async def make_prediction(
+    request: PredictionRequest, api_key: str = Depends(get_api_key)
+):
     """
     Endpoint to make predictions and return RMSE. Requires a valid API key.
     """
     try:
-        # Split the data to get train and test sets
         train_data, test_data = forecaster.split_data()
 
-        # Make predictions
-        predictions = forecaster.make_predictions(steps=request.steps, train_data=train_data)
+        predictions = forecaster.make_predictions(
+            steps=request.steps, train_data=train_data
+        )
 
-        # Evaluate the model to get RMSE
         rmse = forecaster.evaluate_model(test_data, predictions)
 
         # Convert predictions to a list for JSON serialization
-        predictions_list = predictions.tolist() if isinstance(predictions, pd.Series) else list(predictions)
+        predictions_list = (
+            predictions.tolist()
+            if isinstance(predictions, pd.Series)
+            else list(predictions)
+        )
 
-        # Prepare the response
         response_data = {"predictions": predictions_list, "rmse": rmse}
 
         return response_data
@@ -126,8 +125,5 @@ async def make_prediction(request: PredictionRequest, api_key: str = Depends(get
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
 if __name__ == "__main__":
-    import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
