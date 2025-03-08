@@ -1,4 +1,6 @@
-from datetime import datetime, timedelta
+import io
+import pickle
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -11,6 +13,7 @@ from loguru import logger
 from plotly.subplots import make_subplots
 from skforecast.ForecasterAutoreg import ForecasterAutoreg
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
 
 
 class TemperatureForecaster:
@@ -19,6 +22,8 @@ class TemperatureForecaster:
         config_path: str = str(Path.cwd() / "skforecast_eg.toml"),
         db_path: str = "data/temperature_data.duckdb",
         table_name: str = "temperature",
+        train_on_start: bool = True,
+        force_retrain: bool = False,
     ):
         """
         Initialise the TemperatureForecaster.
@@ -27,12 +32,17 @@ class TemperatureForecaster:
             config_path (str): Path to the TOML configuration file.
             db_path (str): Path to the DuckDB database file.
             table_name (str): Name of the table to store temperature data.
+            train_on_start (bool): Whether to train the model on startup.
+            force_retrain (bool): Whether to force retraining of the model, even if a saved model exists.
         """
         self.config = toml.load(config_path)
         self.db_path = db_path
         self.table_name = table_name
         self.forecaster: Optional[ForecasterAutoreg] = None
         self.connection = duckdb.connect(self.db_path)
+        self.train_on_start = train_on_start
+        self.force_retrain = force_retrain
+        self.model_table = "models"  # Table to store models and metadata
 
         # Configure logger
         logger.add(
@@ -40,6 +50,49 @@ class TemperatureForecaster:
             rotation=self.config["logging"]["rotation"],
         )
         logger.info("TemperatureForecaster initialised")
+
+        # Generate synthetic data if the table doesn't exist
+        try:
+            self.connection.execute(
+                f"SELECT COUNT(*) FROM {self.table_name}"
+            ).fetchone()
+        except duckdb.CatalogException:
+            logger.info(
+                f"Table {self.table_name} not found. Generating synthetic data."
+            )
+            self._generate_synthetic_data()
+
+        # Initialize the models table
+        self._init_model_table()
+
+        # Load model if it exists and force_retrain is False
+        if not self.force_retrain:
+            self.load_latest_model()
+        elif self.train_on_start:
+            self.train()
+
+    def _init_model_table(self):
+        """
+        Initialize the table to store models and metadata.
+        """
+        # Create sequence
+        self.connection.execute(
+            f"CREATE SEQUENCE IF NOT EXISTS {self.model_table}_id_seq;"
+        )
+
+        query = f"""
+            CREATE TABLE IF NOT EXISTS {self.model_table} (
+                id INTEGER DEFAULT nextval('{self.model_table}_id_seq'),
+                training_start_date DATE,
+                training_end_date DATE,
+                split_date DATE,
+                rmse DOUBLE,
+                model BLOB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """
+        self.connection.execute(query)
+        logger.info(f"Model table {self.model_table} initialised/verified")
 
     def _generate_synthetic_data(
         self,
@@ -240,8 +293,15 @@ class TemperatureForecaster:
             logger.error("No test data available")
             raise ValueError("No test data available.")
 
+        common_dates = test_data.index.intersection(predictions.index)
+        test_data_aligned = test_data.loc[common_dates]
+        predictions_aligned = predictions.loc[common_dates]
+
         rmse = np.sqrt(
-            np.mean((test_data["temperature"].values - predictions.values) ** 2)
+            np.mean(
+                (test_data_aligned["temperature"].values - predictions_aligned.values)
+                ** 2
+            )
         )
 
         logger.info(f"Model evaluation completed. RMSE: {rmse}")
@@ -302,72 +362,123 @@ class TemperatureForecaster:
         fig.show()
         logger.info("Plotted results using Plotly")
 
-    def plot_rmse_by_steps(self, test_data: pd.DataFrame, train_data: pd.DataFrame):
+    def train(self):
         """
-        Calculate RMSE for different prediction steps and plot the results.
+        Train the model and persist it to the database.
+        """
+        # Ensure synthetic data exists
+        try:
+            self.connection.execute(
+                f"SELECT COUNT(*) FROM {self.table_name}"
+            ).fetchone()
+        except duckdb.CatalogException:
+            logger.info(
+                f"Table {self.table_name} not found. Generating synthetic data."
+            )
+            self._generate_synthetic_data()
+
+        train_data, test_data = self.split_data()
+
+        self.train_model(train_data)
+        predictions = self.make_predictions(
+            len(test_data), train_data
+        )  # need train data
+        rmse = self.evaluate_model(test_data, predictions)
+
+        # Persist the model to the database
+        self.save_model(
+            training_start_date=str(train_data.index[0].date()),
+            training_end_date=str(train_data.index[-1].date()),
+            split_date=str(test_data.index[0].date()),
+            rmse=rmse,
+        )
+
+    def save_model(
+        self,
+        training_start_date: str,
+        training_end_date: str,
+        split_date: str,
+        rmse: float,
+    ):
+        """
+        Save the trained model to the DuckDB database with metadata.
 
         Args:
-            test_data (pd.DataFrame): Test data.
-            train_data (pd.DataFrame): Training data.
+            training_start_date (str): Start date of the training data.
+            training_end_date (str): End date of the training data.
+            split_date (str): Date used to split the training and test sets.
+            rmse (float): Root Mean Squared Error of the model on the test set.
         """
-        # Store RMSE values for different steps
-        rmse_values = []
-        steps_range = range(1, len(test_data) + 1)
+        if not self.forecaster:
+            logger.error("No model to save.")
+            return
 
-        # Calculate RMSE for each number of steps
-        for steps in steps_range:
-            predictions = self.make_predictions(steps=steps, train_data=train_data)
+        # try:
+        # Serialize the model using pickle
+        model_bytes = io.BytesIO()
+        pickle.dump(self.forecaster, model_bytes)
+        model_bytes = model_bytes.getvalue()
 
-            # Align predictions with the test data for evaluation
-            common_dates = test_data.index.intersection(predictions.index)
-            if common_dates.empty:
-                logger.warning(
-                    f"No common dates between predictions and test data for {steps} steps."
-                )
-                rmse_values.append(np.nan)  # or some default value
-                continue
-
-            test_subset = test_data.loc[common_dates]
-            predictions_subset = predictions.loc[common_dates]
-
-            rmse = np.sqrt(
-                np.mean(
-                    (test_subset["temperature"].values - predictions_subset.values) ** 2
-                )
-            )
-            rmse_values.append(rmse)
-
-        # Create a plot
-        fig = go.Figure(
-            data=[go.Scatter(x=list(steps_range), y=rmse_values, mode="lines+markers")]
+        # Insert the model and metadata into the database
+        query = f"""
+            INSERT INTO {self.model_table} (training_start_date, training_end_date, split_date, rmse, model)
+            VALUES (?, ?, ?, ?, ?)
+        """
+        self.connection.execute(
+            query,
+            (training_start_date, training_end_date, split_date, rmse, model_bytes),
         )
+        logger.info("Model saved to database")
+        # except Exception as e:
+        #     logger.error(f"Failed to save model to database: {e}")
 
-        fig.update_layout(
-            title="RMSE vs. Prediction Steps",
-            xaxis_title="Prediction Steps",
-            yaxis_title="RMSE",
-        )
+    def load_latest_model(self):
+        """
+        Load the latest trained model from the DuckDB database.
+        """
+        try:
+            # Query the database for the latest model
+            query = f"""
+                SELECT model FROM {self.model_table}
+                ORDER BY created_at DESC
+                LIMIT 1
+            """
+            result = self.connection.execute(query).fetchone()
 
-        fig.show()
-        logger.info("Plotted RMSE vs. Prediction Steps")
+            if result:
+                # Deserialize the model using pickle
+                model_bytes = result[0]
+                model = pickle.loads(model_bytes)
+                self.forecaster = model
+                logger.info("Latest model loaded from database")
+            else:
+                logger.info("No model found in database")
+        except Exception as e:
+            logger.error(f"Failed to load model from database: {e}")
 
+    def get_model_history(self) -> pd.DataFrame:
+        """
+        Retrieve the model training history from the DuckDB database.
 
-CONFIG_FILE = Path.cwd() / "skforecast_eg.toml"
+        Returns:
+            pd.DataFrame: DataFrame containing the model training history.
+        """
+        try:
+            query = f"""
+                SELECT id, training_start_date, training_end_date, split_date, rmse, created_at
+                FROM {self.model_table}
+                ORDER BY created_at DESC
+            """
+            history = self.connection.execute(query).fetchdf()
+            logger.info("Model history retrieved from database")
 
-if __name__ == "__main__":
-    if not CONFIG_FILE.exists():
-        logger.error(f"Config file {CONFIG_FILE} not found. Exiting.")
-        exit(1)
+            # Convert Timestamp objects to strings
+            history["training_start_date"] = history["training_start_date"].astype(str)
+            history["training_end_date"] = history["training_end_date"].astype(str)
+            history["split_date"] = history["split_date"].astype(str)
+            history["created_at"] = history["created_at"].astype(str)
 
-    forecaster = TemperatureForecaster()
-    forecaster._generate_synthetic_data()  # Generate synthetic temperature data (if needed)
-    train_data, test_data = forecaster.split_data()
-    forecaster.train_model(train_data)
-
-    predictions = forecaster.make_predictions(
-        steps=len(test_data), train_data=train_data
-    )
-    rmse = forecaster.evaluate_model(test_data, predictions)
-
-    forecaster.plot_results(train_data, test_data, predictions)
-    forecaster.plot_rmse_by_steps(test_data, train_data)
+            return history
+        except Exception as e:
+            logger.error(f"Failed to retrieve model history from database: {e}")
+            return pd.DataFrame()  # Return an empty DataFrame in case of error

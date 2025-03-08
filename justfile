@@ -2,19 +2,13 @@
 default:
     @just --list
 
-API_URL := "http://localhost:8000"
-
-# Read API_KEY from .env file
-API_KEY := `grep '^API_KEY=' .env | cut -d'=' -f2 | tr -d '"'`
-
 healthcheck:
     @echo "Checking API health..."
-    @curl -s {{API_URL}}/healthcheck | jq
+    @python api/healthcheck.py
 
 train:
     @echo "Training the model..."
-    @curl -s -X POST {{API_URL}}/train \
-        -H "X-API-Key: {{API_KEY}}" | jq
+    @python api/train.py
 
 predict steps:
     @if [ -z "{{steps}}" ]; then \
@@ -22,7 +16,8 @@ predict steps:
         exit 1; \
     fi
     @echo "Making predictions for {{steps}} steps..."
-    @curl -s -X POST {{API_URL}}/predict \
-        -H "Content-Type: application/json" \
-        -H "X-API-Key: {{API_KEY}}" \
-        -d "{\"steps\": {{steps}}}" | jq
+    @python api/predict.py "{{steps}}"
+
+model_history:
+    @echo "Fetching model history..."
+    @python api/model_history.py
